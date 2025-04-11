@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { ref, onValue } from 'firebase/database';
 import { database } from '@/lib/firebase';
@@ -26,8 +27,8 @@ const Index = () => {
     // In a real implementation, we would send the config to the backend
     // For this demo, we'll simulate a connection request
     setTimeout(() => {
-      // Start WebSocket connection 
-      socketService.connect();
+      // Start WebSocket connection - passing a URL is required by the socket service
+      socketService.connect('ws://localhost:5000/ws');
       
       toast.success('PLC connection successful!', {
         description: `Connected to ${config.type === 'tcp' ? config.ip : config.comPort}`

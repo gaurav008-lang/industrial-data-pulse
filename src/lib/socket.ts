@@ -1,4 +1,3 @@
-
 import { ref, set, serverTimestamp } from 'firebase/database';
 import { database } from './firebase';
 
