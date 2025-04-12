@@ -13,8 +13,9 @@ import {
   User,
   applyActionCode
 } from 'firebase/auth';
-import { app } from '@/lib/firebase';
+import { app, database } from '@/lib/firebase';
 import { toast } from 'sonner';
+import { ref, set, serverTimestamp } from 'firebase/database';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -25,7 +26,6 @@ interface AuthContextType {
   googleSignIn: () => Promise<User>;
   sendVerificationEmail: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
-  verifyOtp: (otp: string, actionCode: string) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -37,6 +37,9 @@ export const useAuth = () => {
   }
   return context;
 };
+
+// Admin email for verification approval
+const ADMIN_EMAIL = 'gauravthamke100@gmail.com';
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -81,9 +84,28 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       const userCredential = await createUserWithEmailAndPassword(auth, email, password);
       toast.success('Account created successfully');
       
-      // Send verification email
-      await sendEmailVerification(userCredential.user);
-      toast.info('Verification email sent. Please check your email.');
+      // Add user to pending verification in database
+      const userId = userCredential.user.uid;
+      const timestamp = new Date().toISOString();
+      
+      await set(ref(database, `users/${userId}`), {
+        email: email,
+        createdAt: timestamp,
+        verified: false,
+        verificationPending: true
+      });
+      
+      // Send notification to admin for verification
+      await set(ref(database, `admin/pendingVerifications/${userId}`), {
+        email: email,
+        timestamp: timestamp,
+        userId: userId
+      });
+      
+      // Send email to admin for manual verification
+      await sendAdminVerificationEmail(email, userId);
+      
+      toast.info('Verification request sent to admin. Please wait for approval.');
       
       return userCredential.user;
     } catch (error: any) {
@@ -103,6 +125,26 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
+  // Send email to admin for verification
+  const sendAdminVerificationEmail = async (userEmail: string, userId: string) => {
+    try {
+      // In a production app, you would use Firebase Cloud Functions to send this email
+      // For now, we'll simulate this by storing the request in the database
+      const verificationRef = ref(database, `admin/emails/verification/${Date.now()}`);
+      await set(verificationRef, {
+        to: ADMIN_EMAIL,
+        subject: 'New User Verification Request',
+        message: `New user registered: ${userEmail}. User ID: ${userId}. Please verify this user.`,
+        timestamp: serverTimestamp(),
+        status: 'pending'
+      });
+      
+      console.log(`Verification email request sent to admin for user: ${userEmail}`);
+    } catch (error) {
+      console.error('Error sending admin verification email:', error);
+    }
+  };
+
   // Sign out
   const logout = async () => {
     try {
@@ -119,6 +161,36 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     try {
       const provider = new GoogleAuthProvider();
       const result = await signInWithPopup(auth, provider);
+      
+      // Check if this is a new user (first time sign in)
+      const isNewUser = result.user.metadata.creationTime === result.user.metadata.lastSignInTime;
+      
+      if (isNewUser) {
+        // Add user to pending verification in database
+        const userId = result.user.uid;
+        const email = result.user.email || 'unknown';
+        const timestamp = new Date().toISOString();
+        
+        await set(ref(database, `users/${userId}`), {
+          email: email,
+          createdAt: timestamp,
+          verified: false,
+          verificationPending: true
+        });
+        
+        // Send notification to admin for verification
+        await set(ref(database, `admin/pendingVerifications/${userId}`), {
+          email: email,
+          timestamp: timestamp,
+          userId: userId
+        });
+        
+        // Send email to admin for manual verification
+        await sendAdminVerificationEmail(email, userId);
+        
+        toast.info('Verification request sent to admin. Please wait for approval.');
+      }
+      
       toast.success('Signed in with Google successfully');
       return result.user;
     } catch (error: any) {
@@ -127,7 +199,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Send verification email
+  // Send verification email (placeholder for future use)
   const sendVerificationEmail = async () => {
     if (!currentUser) {
       toast.error('No user signed in');
@@ -135,10 +207,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
 
     try {
-      await sendEmailVerification(currentUser);
-      toast.success('Verification email sent. Please check your inbox.');
+      toast.success('Verification request already sent to admin. Please wait for approval.');
     } catch (error) {
-      toast.error('Failed to send verification email');
+      toast.error('Failed to send verification request');
       throw error;
     }
   };
@@ -154,17 +225,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Verify OTP for email verification
-  const verifyOtp = async (otp: string, actionCode: string) => {
-    try {
-      await applyActionCode(auth, actionCode);
-      toast.success('Email verified successfully');
-    } catch (error) {
-      toast.error('Failed to verify email');
-      throw error;
-    }
-  };
-
   const value = {
     currentUser,
     loading,
@@ -173,8 +233,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     logout,
     googleSignIn,
     sendVerificationEmail,
-    resetPassword,
-    verifyOtp
+    resetPassword
   };
 
   return (
