@@ -1,5 +1,6 @@
+
 // Service Worker for Industrial Data Pulse PWA
-const CACHE_NAME = 'industrial-data-pulse-v1';
+const CACHE_NAME = 'industrial-data-pulse-v2';
 const urlsToCache = [
   '/',
   '/index.html',
@@ -10,6 +11,7 @@ const urlsToCache = [
 
 // Install event - cache assets
 self.addEventListener('install', (event) => {
+  console.log('Service Worker installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
