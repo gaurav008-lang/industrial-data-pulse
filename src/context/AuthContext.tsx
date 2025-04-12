@@ -1,4 +1,3 @@
-
 import { createContext, useState, useContext, useEffect, ReactNode } from 'react';
 import { 
   getAuth, 
@@ -15,7 +14,8 @@ import {
 } from 'firebase/auth';
 import { app, database } from '@/lib/firebase';
 import { toast } from 'sonner';
-import { ref, set, serverTimestamp } from 'firebase/database';
+import { ref, set, serverTimestamp, push } from 'firebase/database';
+import { sendAdminEmail } from '@/lib/email';
 
 interface AuthContextType {
   currentUser: User | null;
@@ -125,23 +125,39 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  // Send email to admin for verification
+  // Send email to admin for verification - improved implementation
   const sendAdminVerificationEmail = async (userEmail: string, userId: string) => {
     try {
-      // In a production app, you would use Firebase Cloud Functions to send this email
-      // For now, we'll simulate this by storing the request in the database
-      const verificationRef = ref(database, `admin/emails/verification/${Date.now()}`);
+      // Store the request in the database with a unique key
+      const verificationRef = push(ref(database, `admin/emails/verification`));
       await set(verificationRef, {
         to: ADMIN_EMAIL,
+        from: 'noreply@plcwebapp.com',
         subject: 'New User Verification Request',
-        message: `New user registered: ${userEmail}. User ID: ${userId}. Please verify this user.`,
+        message: `
+          <h2>New User Registration</h2>
+          <p>A new user has registered and requires verification:</p>
+          <ul>
+            <li><strong>Email:</strong> ${userEmail}</li>
+            <li><strong>User ID:</strong> ${userId}</li>
+            <li><strong>Registration Time:</strong> ${new Date().toLocaleString()}</li>
+          </ul>
+          <p>Please verify this user by updating their verification status in the admin panel.</p>
+          <p>Or click the link below to directly approve this user:</p>
+          <p><a href="https://plcwebapp.com/admin/verify/${userId}">Verify User</a></p>
+        `,
+        html: true,
         timestamp: serverTimestamp(),
         status: 'pending'
       });
       
+      // Also send directly if possible using sendAdminEmail helper
+      await sendAdminEmail(ADMIN_EMAIL, 'New User Verification Request', `New user registered: ${userEmail}. Please verify this user.`);
+      
       console.log(`Verification email request sent to admin for user: ${userEmail}`);
     } catch (error) {
       console.error('Error sending admin verification email:', error);
+      // We still return successfully even if email fails, as the DB record was created
     }
   };
 

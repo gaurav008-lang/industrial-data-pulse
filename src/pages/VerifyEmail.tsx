@@ -7,12 +7,15 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Mail, RefreshCw, LogOut } from 'lucide-react';
 import { ref, get, onValue } from 'firebase/database';
 import { database } from '@/lib/firebase';
+import { sendAdminEmail } from '@/lib/email';
+import { toast } from 'sonner';
 
 const VerifyEmail = () => {
   const { currentUser, logout } = useAuth();
   const [loading, setLoading] = useState(false);
   const [isVerified, setIsVerified] = useState(false);
   const [checkingStatus, setCheckingStatus] = useState(true);
+  const [lastRequestTime, setLastRequestTime] = useState<string | null>(null);
 
   useEffect(() => {
     if (!currentUser) {
@@ -26,6 +29,11 @@ const VerifyEmail = () => {
       if (snapshot.exists()) {
         const userData = snapshot.val();
         setIsVerified(userData.verified === true);
+        
+        // Check for last request time
+        if (userData.lastVerificationRequest) {
+          setLastRequestTime(userData.lastVerificationRequest);
+        }
       } else {
         setIsVerified(false);
       }
@@ -50,6 +58,39 @@ const VerifyEmail = () => {
   if (isVerified) {
     return <Navigate to="/" />;
   }
+  
+  const handleResendVerification = async () => {
+    setLoading(true);
+    try {
+      if (!currentUser || !currentUser.email) throw new Error("No user logged in");
+      
+      // Update the last request time
+      const timestamp = new Date().toISOString();
+      const userRef = ref(database, `users/${currentUser.uid}`);
+      await get(userRef).then(async (snapshot) => {
+        if (snapshot.exists()) {
+          const userData = snapshot.val();
+          userData.lastVerificationRequest = timestamp;
+          await set(userRef, userData);
+        }
+      });
+      
+      // Send a new verification request to admin
+      await sendAdminEmail(
+        'gauravthamke100@gmail.com',
+        'Verification Reminder: User Account Pending',
+        `User ${currentUser.email} (ID: ${currentUser.uid}) is still waiting for verification. Please verify this account at your earliest convenience.`
+      );
+      
+      setLastRequestTime(timestamp);
+      toast.success('Verification reminder sent to admin');
+    } catch (error) {
+      console.error("Error sending verification reminder:", error);
+      toast.error('Failed to send verification reminder');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleLogout = async () => {
     setLoading(true);
@@ -76,10 +117,15 @@ const VerifyEmail = () => {
           <div className="flex flex-col items-center justify-center p-6 bg-gray-100 rounded-lg">
             <Mail className="h-12 w-12 text-primary mb-4" />
             <p className="text-center mb-4">
-              An email has been sent to the admin to verify your account. 
+              A verification request has been sent to admin at <strong>gauravthamke100@gmail.com</strong>.
               You'll be able to access the app once your account has been approved.
             </p>
-            <p className="text-center text-sm text-muted-foreground">
+            {lastRequestTime && (
+              <p className="text-center text-sm text-muted-foreground">
+                Last verification request: {new Date(lastRequestTime).toLocaleString()}
+              </p>
+            )}
+            <p className="text-center text-sm text-muted-foreground mt-2">
               This might take some time. Please be patient.
             </p>
           </div>
@@ -93,6 +139,14 @@ const VerifyEmail = () => {
             disabled={loading}
           >
             <RefreshCw className="mr-2 h-4 w-4" /> Check verification status
+          </Button>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={handleResendVerification}
+            disabled={loading}
+          >
+            <Mail className="mr-2 h-4 w-4" /> Send verification reminder
           </Button>
           <Button 
             variant="ghost" 
