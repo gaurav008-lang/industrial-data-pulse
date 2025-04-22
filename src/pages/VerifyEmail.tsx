@@ -1,11 +1,10 @@
-
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Link, Navigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Mail, RefreshCw, LogOut } from 'lucide-react';
-import { ref, get, onValue } from 'firebase/database';
+import { ref, get, onValue, set } from 'firebase/database';
 import { database } from '@/lib/firebase';
 import { sendAdminEmail } from '@/lib/email';
 import { toast } from 'sonner';
@@ -23,14 +22,12 @@ const VerifyEmail = () => {
       return;
     }
 
-    // Set up a listener for verification status changes
     const userRef = ref(database, `users/${currentUser.uid}`);
     const unsubscribe = onValue(userRef, (snapshot) => {
       if (snapshot.exists()) {
         const userData = snapshot.val();
         setIsVerified(userData.verified === true);
         
-        // Check for last request time
         if (userData.lastVerificationRequest) {
           setLastRequestTime(userData.lastVerificationRequest);
         }
@@ -64,7 +61,6 @@ const VerifyEmail = () => {
     try {
       if (!currentUser || !currentUser.email) throw new Error("No user logged in");
       
-      // Update the last request time
       const timestamp = new Date().toISOString();
       const userRef = ref(database, `users/${currentUser.uid}`);
       await get(userRef).then(async (snapshot) => {
@@ -75,7 +71,6 @@ const VerifyEmail = () => {
         }
       });
       
-      // Send a new verification request to admin
       await sendAdminEmail(
         'gauravthamke100@gmail.com',
         'Verification Reminder: User Account Pending',
